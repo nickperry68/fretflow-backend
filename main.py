@@ -5,29 +5,28 @@ import os
 app = Flask(__name__)
 CORS(app)
 
+# Tried-and-tested chord shapes relative to their base root string (Root-6 is based on E, Root-5 on A)
 CHORD_TEMPLATES = {
     "maj": [
-        {"name": "Root-6 Barre (E-Shape)", "base_string": 0, "offsets": [0, 2, 2, 1, 0, 0], "span": 3},
-        {"name": "Root-5 Barre (A-Shape)", "base_string": 1, "offsets": ["x", 0, 2, 2, 2, 0], "span": 3},
-        {"name": "Interior Triad (D-G-B strings)", "base_string": 2, "offsets": ["x", "x", 0, 2, 3, 2], "span": 3},
-        {"name": "High Shell Voicing", "base_string": 3, "offsets": ["x", "x", "x", 9, 10, 8], "span": 3},
+        {"name": "Root-6 Barre (E-Shape)", "base_root": "E", "frets": [0, 2, 2, 1, 0, 0], "span": 3},
+        {"name": "Root-5 Barre (A-Shape)", "base_root": "A", "frets": ["x", 0, 2, 2, 2, 0], "span": 3},
+        {"name": "Interior Triad (D-G-B strings)", "base_root": "D", "frets": ["x", "x", 0, 2, 3, 2], "span": 3},
     ],
     "min": [
-        {"name": "Root-6 Minor (Em-Shape)", "base_string": 0, "offsets": [0, 2, 2, 0, 0, 0], "span": 2},
-        {"name": "Root-5 Minor (Am-Shape)", "base_string": 1, "offsets": ["x", 0, 2, 2, 1, 0], "span": 2},
-        {"name": "Interior Minor Triad", "base_string": 2, "offsets": ["x", "x", 0, 2, 1, 3], "span": 3},
+        {"name": "Root-6 Minor (Em-Shape)", "base_root": "E", "frets": [0, 2, 2, 0, 0, 0], "span": 2},
+        {"name": "Root-5 Minor (Am-Shape)", "base_root": "A", "frets": ["x", 0, 2, 2, 1, 0], "span": 2},
     ],
     "7": [
-        {"name": "Root-6 Dominant 7", "base_string": 0, "offsets": [0, 2, 0, 1, 0, 0], "span": 2},
-        {"name": "Root-5 Dominant 7", "base_string": 1, "offsets": ["x", 0, 2, 0, 2, 0], "span": 2},
+        {"name": "Root-6 Dominant 7", "base_root": "E", "frets": [0, 2, 0, 1, 0, 0], "span": 2},
+        {"name": "Root-5 Dominant 7", "base_root": "A", "frets": ["x", 0, 2, 0, 2, 0], "span": 2},
     ],
     "m7": [
-        {"name": "Root-6 Minor 7", "base_string": 0, "offsets": [0, 2, 0, 0, 0, 0], "span": 2},
-        {"name": "Root-5 Minor 7", "base_string": 1, "offsets": ["x", 0, 2, 0, 1, 0], "span": 2},
+        {"name": "Root-6 Minor 7", "base_root": "E", "frets": [0, 2, 0, 0, 0, 0], "span": 2},
+        {"name": "Root-5 Minor 7", "base_root": "A", "frets": ["x", 0, 2, 0, 1, 0], "span": 2},
     ],
     "maj7": [
-        {"name": "Root-6 Major 7", "base_string": 0, "offsets": [0, "x", 1, 1, 0, "x"], "span": 2},
-        {"name": "Root-5 Major 7", "base_string": 1, "offsets": ["x", 0, 2, 1, 2, 0], "span": 2},
+        {"name": "Root-6 Major 7", "base_root": "E", "frets": [0, "x", 1, 1, 0, "x"], "span": 2},
+        {"name": "Root-5 Major 7", "base_root": "A", "frets": ["x", 0, 2, 1, 2, 0], "span": 2},
     ]
 }
 
@@ -37,35 +36,6 @@ NOTE_TO_SEMITONE = {
     "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11
 }
 
-TUNING_OFFSETS = {
-    "standard": ["E", "A", "D", "G", "B", "E"],
-    "drop d (dadgbe)": ["D", "A", "D", "G", "B", "E"],
-    "drop_d": ["D", "A", "D", "G", "B", "E"]
-}
-
-def get_fret(root: str, string_idx: int, offset, tuning: str, base_string: int = 0) -> str:
-    if offset == "x":
-        return "x"
-    
-    tuning_key = tuning.lower().strip()
-    tuning_notes = TUNING_OFFSETS.get(tuning_key, TUNING_OFFSETS["standard"])
-    root_semitone = NOTE_TO_SEMITONE.get(root.capitalize(), 0)
-    
-    base_open_note = tuning_notes[base_string]
-    base_open_semitone = NOTE_TO_SEMITONE.get(base_open_note, 0)
-    root_fret_on_base = (root_semitone - base_open_semitone) % 12
-    
-    target_open_note = tuning_notes[string_idx]
-    target_open_semitone = NOTE_TO_SEMITONE.get(target_open_note, 0)
-    
-    absolute_semitone = base_open_semitone + root_fret_on_base + offset
-    fret = (absolute_semitone - target_open_semitone) % 12
-    
-    while fret < 0:
-        fret += 12
-        
-    return str(fret)
-
 @app.route('/')
 def home():
     return "FretFlow Backend is active and running!"
@@ -74,7 +44,6 @@ def home():
 def generate_arrangement():
     data = request.get_json() or {}
     raw_progression = data.get("chords", data.get("progression", "D - G - Em - A"))
-    tuning = data.get("tuning", "standard")
     
     progression = []
     if isinstance(raw_progression, str):
@@ -103,19 +72,27 @@ def generate_arrangement():
         
     response_data = []
     for item in progression:
-        root = item.get("root")
+        root = item.get("root").capitalize()
         quality = item.get("quality", "maj").lower()
         templates = CHORD_TEMPLATES.get(quality, CHORD_TEMPLATES["maj"])
         
         chord_variations = []
         for t in templates:
-            frets = [
-                get_fret(root, i, off, tuning, t["base_string"]) 
-                for i, off in enumerate(t["offsets"])
-            ]
+            base_root = t["base_root"]
+            # Calculate the exact semitone shift from the template base root to the target chord root
+            shift = (NOTE_TO_SEMITONE.get(root, 0) - NOTE_TO_SEMITONE.get(base_root, 0)) % 12
+            
+            shifted_frets = []
+            for f in t["frets"]:
+                if f == "x":
+                    shifted_frets.append("x")
+                else:
+                    # Shift the base shape cleanly without wrapping individual notes
+                    shifted_frets.append(f + shift)
+                    
             chord_variations.append({
                 "name": t["name"],
-                "frets": frets,
+                "frets": shifted_frets,
                 "span": t["span"]
             })
             
@@ -127,7 +104,6 @@ def generate_arrangement():
         })
 
     return jsonify({
-        "tuning": tuning,
         "progression": response_data
     })
 
