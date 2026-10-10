@@ -1,5 +1,3 @@
-# main.py
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
@@ -42,28 +40,29 @@ NOTE_TO_SEMITONE = {
 
 TUNING_OFFSETS = {
     "standard": ["E", "A", "D", "G", "B", "E"],
+    "drop d (dadgbe)": ["D", "A", "D", "G", "B", "E"],
     "drop_d": ["D", "A", "D", "G", "B", "E"]
 }
 
 def get_fret(root: str, string_idx: int, offset, tuning: str) -> str:
     if offset == "x":
         return "x"
-    open_note = TUNING_OFFSETS.get(tuning, TUNING_OFFSETS["standard"])[string_idx]
+    tuning_key = tuning.lower().strip()
+    open_note = TUNING_OFFSETS.get(tuning_key, TUNING_OFFSETS["standard"])[string_idx]
     root_semitone = NOTE_TO_SEMITONE.get(root.capitalize(), 0)
     open_semitone = NOTE_TO_SEMITONE.get(open_note, 0)
     
     fret = (root_semitone - open_semitone) % 12 + offset
     return str(fret)
 
-# This gives a friendly message if someone visits the main link directly
 @app.route('/')
 def home():
     return "FretFlow Backend is active and running!"
 
-@app.route('/api/voicings', methods=['POST'])
-def fetch_voicings():
+@app.route('/generate', methods=['POST'])
+def generate_arrangement():
     data = request.get_json() or {}
-    raw_progression = data.get("progression", [])
+    raw_progression = data.get("chords", data.get("progression", "D - G - Em - A"))
     tuning = data.get("tuning", "standard")
     
     progression = []
@@ -92,6 +91,8 @@ def fetch_voicings():
         progression = raw_progression
         
     resolved_chords = {}
+    output_text = "🎸 FretFlow Hybrid Voicings Report\n" + "="*35 + "\n\n"
+    
     for item in progression:
         root = item.get("root")
         quality = item.get("quality", "maj").lower()
@@ -100,17 +101,13 @@ def fetch_voicings():
         templates = CHORD_TEMPLATES.get(quality, CHORD_TEMPLATES["maj"])
         chord_variations = []
         
+        output_text += f"Chord: {root.upper()}{quality if quality != 'maj' else ''}\n"
         for t in templates:
             frets = [get_fret(root, i, off, tuning) for i, off in enumerate(t["offsets"])]
-            chord_variations.append({
-                "name": t["name"],
-                "frets": frets,
-                "span": t["span"]
-            })
-            
-        resolved_chords[key_name] = chord_variations
-        
-    return jsonify({"status": "success", "voicings": resolved_chords})
+            output_text += f"  - {t['name']}: {frets}\n"
+        output_text += "\n"
+
+    return jsonify({"result": output_text})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
