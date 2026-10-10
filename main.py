@@ -8,7 +8,6 @@ app = Flask(__name__)
 CORS(app)  # Keeps the door open for your website to talk to Railway
 
 # Master dictionary of physical, human-verified guitar voicings 
-# based on standard string offsets from a root position.
 CHORD_TEMPLATES = {
     "maj": [
         {"name": "Root-6 Barre (E-Shape)", "base_string": 0, "offsets": [0, 2, 2, 1, 0, 0], "span": 3},
@@ -56,13 +55,17 @@ def get_fret(root: str, string_idx: int, offset, tuning: str) -> str:
     fret = (root_semitone - open_semitone) % 12 + offset
     return str(fret)
 
+# This gives a friendly message if someone visits the main link directly
+@app.route('/')
+def home():
+    return "FretFlow Backend is active and running!"
+
 @app.route('/api/voicings', methods=['POST'])
 def fetch_voicings():
     data = request.get_json() or {}
     raw_progression = data.get("progression", [])
     tuning = data.get("tuning", "standard")
     
-    # If the website sends a text string like "D - G - Em", convert it automatically
     progression = []
     if isinstance(raw_progression, str):
         chords = [c.strip() for c in raw_progression.replace("-", " ").split() if c.strip()]
