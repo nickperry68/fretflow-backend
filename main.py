@@ -3,9 +3,8 @@ from flask_cors import CORS
 import os
 
 app = Flask(__name__)
-CORS(app)  # Keeps the door open for your website to talk to Railway
+CORS(app)
 
-# Master dictionary of physical, human-verified guitar voicings 
 CHORD_TEMPLATES = {
     "maj": [
         {"name": "Root-6 Barre (E-Shape)", "base_string": 0, "offsets": [0, 2, 2, 1, 0, 0], "span": 3},
@@ -44,15 +43,27 @@ TUNING_OFFSETS = {
     "drop_d": ["D", "A", "D", "G", "B", "E"]
 }
 
-def get_fret(root: str, string_idx: int, offset, tuning: str) -> str:
+def get_fret(root: str, string_idx: int, offset, tuning: str, base_string: int = 0) -> str:
     if offset == "x":
         return "x"
-    tuning_key = tuning.lower().strip()
-    open_note = TUNING_OFFSETS.get(tuning_key, TUNING_OFFSETS["standard"])[string_idx]
-    root_semitone = NOTE_TO_SEMITONE.get(root.capitalize(), 0)
-    open_semitone = NOTE_TO_SEMITONE.get(open_note, 0)
     
-    fret = (root_semitone - open_semitone) % 12 + offset
+    tuning_key = tuning.lower().strip()
+    tuning_notes = TUNING_OFFSETS.get(tuning_key, TUNING_OFFSETS["standard"])
+    root_semitone = NOTE_TO_SEMITONE.get(root.capitalize(), 0)
+    
+    base_open_note = tuning_notes[base_string]
+    base_open_semitone = NOTE_TO_SEMITONE.get(base_open_note, 0)
+    root_fret_on_base = (root_semitone - base_open_semitone) % 12
+    
+    target_open_note = tuning_notes[string_idx]
+    target_open_semitone = NOTE_TO_SEMITONE.get(target_open_note, 0)
+    
+    absolute_semitone = base_open_semitone + root_fret_on_base + offset
+    fret = (absolute_semitone - target_open_semitone) % 12
+    
+    while fret < 0:
+        fret += 12
+        
     return str(fret)
 
 @app.route('/')
@@ -90,24 +101,35 @@ def generate_arrangement():
     else:
         progression = raw_progression
         
-    resolved_chords = {}
-    output_text = "🎸 FretFlow Hybrid Voicings Report\n" + "="*35 + "\n\n"
-    
+    response_data = []
     for item in progression:
         root = item.get("root")
         quality = item.get("quality", "maj").lower()
-        key_name = f"{root}{quality}"
-        
         templates = CHORD_TEMPLATES.get(quality, CHORD_TEMPLATES["maj"])
-        chord_variations = []
         
-        output_text += f"Chord: {root.upper()}{quality if quality != 'maj' else ''}\n"
+        chord_variations = []
         for t in templates:
-            frets = [get_fret(root, i, off, tuning) for i, off in enumerate(t["offsets"])]
-            output_text += f"  - {t['name']}: {frets}\n"
-        output_text += "\n"
+            frets = [
+                get_fret(root, i, off, tuning, t["base_string"]) 
+                for i, off in enumerate(t["offsets"])
+            ]
+            chord_variations.append({
+                "name": t["name"],
+                "frets": frets,
+                "span": t["span"]
+            })
+            
+        response_data.append({
+            "chord": f"{root}{quality if quality != 'maj' else ''}",
+            "root": root,
+            "quality": quality,
+            "variations": chord_variations
+        })
 
-    return jsonify({"result": output_text})
+    return jsonify({
+        "tuning": tuning,
+        "progression": response_data
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
