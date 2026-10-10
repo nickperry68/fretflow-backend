@@ -1,9 +1,11 @@
 # main.py
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import os
 
 app = Flask(__name__)
+CORS(app)  # Keeps the door open for your website to talk to Railway
 
 # Master dictionary of physical, human-verified guitar voicings 
 # based on standard string offsets from a root position.
@@ -48,19 +50,44 @@ def get_fret(root: str, string_idx: int, offset, tuning: str) -> str:
     if offset == "x":
         return "x"
     open_note = TUNING_OFFSETS.get(tuning, TUNING_OFFSETS["standard"])[string_idx]
-    root_semitone = NOTE_TO_SEMITONE[root.capitalize()]
-    open_semitone = NOTE_TO_SEMITONE[open_note]
+    root_semitone = NOTE_TO_SEMITONE.get(root.capitalize(), 0)
+    open_semitone = NOTE_TO_SEMITONE.get(open_note, 0)
     
-    # Calculate absolute fret position on that string
     fret = (root_semitone - open_semitone) % 12 + offset
     return str(fret)
 
 @app.route('/api/voicings', methods=['POST'])
 def fetch_voicings():
     data = request.get_json() or {}
-    progression = data.get("progression", []) # e.g. [{"root": "F#", "quality": "m7"}, ...]
+    raw_progression = data.get("progression", [])
     tuning = data.get("tuning", "standard")
     
+    # If the website sends a text string like "D - G - Em", convert it automatically
+    progression = []
+    if isinstance(raw_progression, str):
+        chords = [c.strip() for c in raw_progression.replace("-", " ").split() if c.strip()]
+        for chord in chords:
+            root = chord[0].upper()
+            if len(chord) > 1 and chord[1] in ["#", "b"]:
+                root = chord[:2]
+                quality_str = chord[2:].lower()
+            else:
+                quality_str = chord[1:].lower()
+            
+            if quality_str in ["m", "min"]:
+                quality = "min"
+            elif quality_str in ["7"]:
+                quality = "7"
+            elif quality_str in ["m7", "min7"]:
+                quality = "m7"
+            elif quality_str in ["maj7"]:
+                quality = "maj7"
+            else:
+                quality = "maj"
+            progression.append({"root": root, "quality": quality})
+    else:
+        progression = raw_progression
+        
     resolved_chords = {}
     for item in progression:
         root = item.get("root")
@@ -71,7 +98,6 @@ def fetch_voicings():
         chord_variations = []
         
         for t in templates:
-            base_str = t["base_string"]
             frets = [get_fret(root, i, off, tuning) for i, off in enumerate(t["offsets"])]
             chord_variations.append({
                 "name": t["name"],
